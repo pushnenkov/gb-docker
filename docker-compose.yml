@@ -1,0 +1,123 @@
+version: '3.2'
+
+services:
+  apachegb:
+    image: httpd:2.4
+    container_name: apachegb
+    volumes:
+      - ./web_src:/var/www
+      - ./etc/httpd/conf/httpd.conf:/usr/local/apache2/conf/httpd.conf
+      - ./etc/httpd/sites-enabled:/usr/local/apache2/sites-enabled
+      - ./log/httpd_log:/usr/local/apache2/logs
+    depends_on:
+      - phpgb
+    networks:
+      app_net_docker:
+        ipv4_address: 172.16.220.11
+
+  nginxgb:
+    image: nginx:1.16.1
+    container_name: nginxgb
+    ports:
+      - 80:80
+      - 443:443
+    volumes:
+      - ./web_src:/var/www
+      - ./etc/nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./etc/nginx/locations.conf:/etc/nginx/locations.conf
+      - ./etc/nginx/sites-enabled:/etc/nginx/conf.d
+      - ./etc/nginx/ssl:/etc/nginx/ssl
+      - ./log/nginx_log:/var/log/nginx
+    depends_on:
+      - apachegb
+    networks:
+      app_net_docker:
+        ipv4_address: 172.16.220.2
+
+  phpgb:
+    build: ./builder/php
+    container_name: phpgb
+    volumes:
+      - ./web_src:/var/www
+      - ./etc/php/php.ini:/usr/local/etc/php/php.ini
+    links:
+      - dbgb
+      - redisgb
+    environment:
+      XDEBUG_CONFIG: "remote_host=host.docker.internal remote_port=9000 remote_enable=1"
+      PHP_IDE_CONFIG: "serverName=Docker"
+    networks:
+      app_net_docker:
+        ipv4_address: 172.16.220.3
+
+  composergb:
+    image: "composer"
+    container_name: composergb
+    volumes:
+      - ./web_src:/app
+    depends_on:
+      - phpgb
+    networks:
+      app_net_docker:
+        ipv4_address: 172.16.220.4
+
+  dbgb:
+    image: percona/percona-server:5.7.24
+    container_name: dbgb
+    restart: always
+    env_file:
+      - ".env"
+    user: "1001:1001"
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_TCP_PORT: 3306
+    volumes:
+      - percona:/var/lib/mysql
+      - ./etc/mysql/conf.d:/etc/mysql/conf.d
+      - ./etc/mysql/my.cnf:/etc/my.cnf:ro
+    security_opt:
+      - seccomp:unconfined
+    networks:
+      app_net_docker:
+        ipv4_address: 172.16.220.5
+
+  phpmyadmingb:
+    image: phpmyadmin/phpmyadmin
+    container_name: phpmyadmingb
+    links:
+      - dbgb
+    ports:
+      - 8181:80
+    env_file:
+      - ".env"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+    volumes:
+      - ./data/pma/config.user.inc.php:/etc/phpmyadmin/config.user.inc.php
+    depends_on:
+      - dbgb
+    networks:
+      app_net_docker:
+        ipv4_address: 172.16.220.6
+
+  redisgb:
+    image: redis:5.0.5
+    container_name: redisgb
+    restart: always
+    volumes:
+      - ./data/redisdb:/data
+    networks:
+      app_net_docker:
+        ipv4_address: 172.16.220.7
+networks:
+  app_net_docker:
+    ipam:
+      driver: default
+      config:
+        - subnet: "172.16.220.0/24"
+volumes:
+  percona:
+    external: false

@@ -1,0 +1,2 @@
+* * * * *	/cronscripts/bitrix.sh  >> /var/log/cron.log 2>&1
+
